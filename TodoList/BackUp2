@@ -1,0 +1,229 @@
+
+//
+//  ContentView.swift
+//  TodoList
+//
+//  Created by Mohammad Azam on 5/25/22.
+//
+
+import SwiftUI
+import RealmSwift
+import Combine
+
+enum Sections: String, CaseIterable {
+    case pending = "Pending"
+    case completed = "Completed"
+}
+
+struct FooView: View {
+    var body: some View {
+        let _ = print("FOOVIEW")
+        let _ = print(Self._printChanges())
+        Text("FooView")
+    }
+}
+
+struct ContentView: View {
+    
+    @State private var taskName: String = ""
+    @State private var priority: Priority = .medium
+    @State var notificationToken: NotificationToken?
+    
+    @StateObject var realmManager: RealmManager
+    
+    init(realmManager: RealmManager) {
+        _realmManager = StateObject(wrappedValue: realmManager)
+        //watchForChanges()
+    }
+    
+    var pendingTasks: Results<Task> {
+        tasks.where { task in
+            task.isCompleted == false
+        }
+    }
+    
+    var completionTasks: Results<Task> {
+        tasks.where { task in
+            task.isCompleted == true
+        }
+       
+    }
+   
+    
+    var tasks: Results<Task> {
+        realmManager.realm.objects(Task.self)
+    }
+    
+    private func save(_ task: Task) {
+        do {
+            
+            let realm = realmManager.realm
+            
+            try realm.write {
+                realm.add(task)
+            }
+        } catch {
+            print(error)
+        }
+        
+        taskName = ""
+    }
+    
+    private func update(_ task: Task, completed: Bool) {
+        
+        do {
+            let realm = try Realm()
+            guard let persistedTask = realm.object(ofType: Task.self, forPrimaryKey: task.id) else {
+                return
+            }
+            
+            try realm.write {
+                persistedTask.isCompleted = completed
+            }
+            
+        } catch {
+            print(error)
+        }
+        
+    }
+    
+    var body: some View {
+        
+        NavigationView {
+            VStack {
+                TextField("Enter task", text: $taskName)
+                    .textFieldStyle(.roundedBorder)
+                
+                Picker("Priority", selection: $priority) {
+                    ForEach(Priority.allCases, id: \.self) { priority in
+                        Text(priority.title)
+                    }
+                }.pickerStyle(.segmented)
+                
+                Button {
+                    // action
+                    let task = Task()
+                    task.title = taskName
+                    task.priority = priority
+                    
+                    save(task)
+                    
+                } label: {
+                    Text("Save")
+                        .frame(maxWidth: .infinity)
+                }.buttonStyle(.borderedProminent)
+                
+                FooView()
+                
+                List {
+                    
+                    ForEach(Sections.allCases, id: \.self) { section in
+                        
+                        Section {
+                            
+                            let filteredTasks = section == .pending ? pendingTasks: completionTasks
+                            
+                            if filteredTasks.isEmpty {
+                                Text("No tasks are found.")
+                            }
+                            
+                            ForEach(filteredTasks) { task in
+                                HStack {
+                                    
+                                    Image(systemName: task.isCompleted ? "checkmark.square": "square")
+                                        .onTapGesture {
+                                            
+                                            guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+                                            let task = tasks[index]
+                                            
+                                            do {
+                                                let realm = try Realm()
+                                                guard let taskToUpdate = realm.object(ofType: Task.self, forPrimaryKey: task.id) else { return }
+                                                try realm.write {
+                                                    taskToUpdate.isCompleted.toggle()
+                                                }
+                                            } catch {
+                                                print(error)
+                                            }
+                                            
+                                        }
+                                    Text(task.title)
+                                }
+                            }.onDelete { indexSet in
+                                indexSet.forEach { index in
+                                    
+                                    let task = tasks[index]
+                                    do {
+                                        let realm = realmManager.realm
+                                        try realm.write {
+                                            realm.delete(task)
+                                        }
+                                    } catch {
+                                        print(error)
+                                    }
+                                }
+                            }
+                            
+                        } header: {
+                            Text(section.rawValue)
+                        }
+                        
+                    }
+                    
+                }.listStyle(.plain)
+                
+            }.onAppear {
+                
+                notificationToken = tasks.observe { changes in
+                    print("CHANGES")
+                    print(changes)
+                }
+                
+                // if realmManager.realm != nil {
+                // watchForChanges()
+                // }
+            }
+            
+            Spacer()
+            
+        }.padding()
+            .navigationTitle("Tasks")
+    }
+}
+
+
+struct TaskCellView: View {
+    
+    let task: Task
+    let selected: Bool
+    let onSelected: (Bool) -> Void
+    
+    func priorityColor(_ task: Task) -> Color {
+        switch task.priority {
+            case .low:
+                return .gray
+            case .medium:
+                return .orange
+            case .high:
+                return .red
+        }
+    }
+    
+    var body: some View {
+        HStack {
+            Image(systemName: selected ? "checkmark.square": "square")
+                .onTapGesture {
+                    onSelected(!selected)
+                }
+            
+            Text("\(task.title)")
+            Spacer()
+            Text("\(task.priority.title)")
+                .frame(width: 75)
+                .padding(6)
+                .foregroundColor(.white)
+                .background(priorityColor(task))
+                .clipShape(RoundedRectangle(cornerRadius: 10.0, style: .continuous))
+        }
+    }
+}

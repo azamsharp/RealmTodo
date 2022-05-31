@@ -1,0 +1,167 @@
+
+//
+//  ContentView.swift
+//  TodoList
+//
+//  Created by Mohammad Azam on 5/25/22.
+//
+
+import SwiftUI
+import RealmSwift
+
+struct ContentView: View {
+    
+    @ObservedResults(Task.self) var tasks
+    
+    @State private var taskName: String = ""
+    @State private var priority: Priority = .medium
+    @State private var selectedTaskIds = [ObjectId]()
+    
+    let sectionHeaders: [String] = ["Pending", "Completed"]
+    
+    func isSelected(_ task: Task) -> Bool {
+        return selectedTaskIds.contains(task.id)
+    }
+    
+    var pendingTasks: [Task] {
+        tasks.filter { !$0.isCompleted }
+    }
+    
+    var completionTasks: [Task] {
+        tasks.filter { $0.isCompleted }
+    }
+    
+    private func update(_ task: Task, completed: Bool) {
+        
+        do {
+            let realm = try Realm()
+            guard let persistedTask = realm.object(ofType: Task.self, forPrimaryKey: task.id) else {
+                return
+            }
+            
+            try realm.write {
+                persistedTask.isCompleted = completed
+            }
+            
+        } catch {
+            print(error)
+        }
+        
+    }
+    
+    var body: some View {
+        
+        NavigationView {
+        VStack {
+            TextField("Enter task", text: $taskName)
+                .textFieldStyle(.roundedBorder)
+               
+            Picker("Priority", selection: $priority) {
+                ForEach(Priority.allCases, id: \.self) { priority in
+                    Text(priority.title)
+                }
+            }.pickerStyle(.segmented)
+            
+            Button {
+                // action
+                let task = Task()
+                task.title = taskName
+                task.priority = priority
+                $tasks.append(task)
+                
+            } label: {
+                Text("Save")
+                    .frame(maxWidth: .infinity)
+            }.buttonStyle(.borderedProminent)
+            
+            
+            List {
+             
+                Section(header: Text("Pending")) {
+                    ForEach(pendingTasks, id: \.id) { task in
+                        TaskCellView(task: task, selected: isSelected(task)) { selected in
+                            if selected {
+                                // add it
+                                selectedTaskIds.append(task.id)
+                               
+                            } else {
+                                // remove it
+                                selectedTaskIds = selectedTaskIds.filter { $0 != task.id }
+                            }
+                            
+                            update(task, completed: selected)
+                        }
+                    }
+                }
+                
+                
+                
+                
+                Section(header: Text("Completed")) {
+                    ForEach(completionTasks, id: \.id) { task in
+                        TaskCellView(task: task, selected: isSelected(task)) { selected in
+                            if selected {
+                                // add it
+                                selectedTaskIds.append(task.id)
+                               
+                            } else {
+                                // remove it
+                                selectedTaskIds = selectedTaskIds.filter { $0 != task.id }
+                            }
+                            
+                            update(task, completed: selected)
+                        }
+                    }
+                }
+                }
+            }
+            
+            Spacer()
+            
+        }.padding()
+                .navigationTitle("Tasks")
+        }
+    }
+
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
+
+struct TaskCellView: View {
+    
+    let task: Task
+    let selected: Bool
+    let onSelected: (Bool) -> Void
+    
+    func priorityColor(_ task: Task) -> Color {
+        switch task.priority {
+            case .low:
+                return .gray
+            case .medium:
+                return .orange
+            case .high:
+                return .red
+        }
+    }
+    
+    var body: some View {
+        HStack {
+            Image(systemName: selected ? "checkmark.square": "square")
+                .onTapGesture {
+                    onSelected(!selected)
+                }
+            
+            Text("\(task.title)")
+            Spacer()
+            Text("\(task.priority.title)")
+                .frame(width: 75)
+                .padding(6)
+                .foregroundColor(.white)
+                .background(priorityColor(task))
+                .clipShape(RoundedRectangle(cornerRadius: 10.0, style: .continuous))
+        }
+    }
+}
